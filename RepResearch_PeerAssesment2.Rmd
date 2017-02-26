@@ -1,0 +1,26 @@
+---
+title: "Reproducible_Research_Peer_Assesment_2"
+author: "Jorge Alcaraz"
+date: "25/2/2017"
+output: html_document
+---
+
+# Reproducible Research: Peer Assesment 2
+
+## Analysis of: The Impact of Severe Wheather Wvents on Public Health and Economy in the United States
+
+### Settings needed for analysis
+
+```{r}
+echo = T
+
+```
+
+
+```{r}
+if(!file.exists("data/StormData.csv.bz2")){
+    download.file("https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2", destfile = "data/StormData.csv.bz2", method = "curl")
+}
+
+```
+
