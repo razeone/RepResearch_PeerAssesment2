@@ -7,20 +7,157 @@ output: html_document
 
 # Reproducible Research: Peer Assesment 2
 
-## Analysis of: The Impact of Severe Wheather Wvents on Public Health and Economy in the United States
+## Analysis of: The Impact of Severe Wheather Events on Public Health and Economy in the United States
 
-### Settings needed for analysis
+### Synopsis
 
-```{r}
-echo = T
+This analysis summarizes the findings on public health and economic impact regarding severe weather events in the US. The data come from the U.S. National Oceanic and Atmospheric Administration’s (NOAA) from 1950 - 2011. We're going to use the data from 1995 and so on for this analysis since there are more data records in those years. The data contains the type of storm event, details like location, date, estimates for damage to property as well as the number of human victims of the storm. In this report we investigate which type of events are the most harmful to the population and financially.
 
+#### Settings needed for analysis
+
+```{r, cache = TRUE}
+echo = T # This will always make the code visible
+library(R.utils) # for using bunzip
+library(plyr) # for using count
+library(ggplot2) # For the final plots
 ```
 
+### Data Processing
 
-```{r}
+First we need to retrieve the data, and uncompress it.
+
+```{r, cache = TRUE}
 if(!file.exists("data/StormData.csv.bz2")){
     download.file("https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2", destfile = "data/StormData.csv.bz2", method = "curl")
 }
-
+if(!file.exists("data/StormData.csv")){
+    bunzip2("data/StormData.csv.bz2", overwrite=T, remove=F)
+}
 ```
+
+Then we load the dataset into R; we check if the variable is already loaded into R
+
+```{r, cache = TRUE}
+if(!"stormData" %in% ls()){
+    stormData <- read.csv("data/StormData.csv", sep = ",", header = T)
+}
+dim(stormData)
+head(stormData)
+tail(stormData)
+```
+
+We have a dataset with 902297 rows and 37 columns. The measurements start from 1950 to 2011. Dates are formated as factors, so we need to extract the year into a new variable.
+
+```{r, cache = TRUE}
+if(dim(stormData)[2] == 37){
+    stormData$year <- as.numeric(format(as.Date(stormData$BGN_DATE, format = "%m/%d/%Y %H:%M:%S"), "%Y"))
+}
+hist(stormData$year, xlab = "Year", main = "Histogram of records per year")
+```
+
+With the histogram below, we can now see that there are actually more records from 1995 to 2011. We can us a scatterplot to better visualize that.
+
+```{r, cache = TRUE}
+yearRecords <- count(stormData, "year")
+plot(yearRecords, main = "Scatterplot of frecuency vs year")
+```
+
+
+Since the records before 1995 are less, we can use the data since that year and beyond to make our analysis.
+
+```{r, cache = TRUE}
+stormSubset <- stormData[stormData$year >= 1995, ]
+dim(stormSubset)
+```
+
+We have now a subset of 681500 rows and 38 columns.
+
+#### Impact on public health
+
+We're going to use a function to get the top 15 events by injury, in our case we'll get *FATALITIES* and *INJURIES*
+
+```{r, cache = TRUE}
+topEvents <- function(fieldName, top = 15, dataset = stormData) {
+    index <- which(colnames(dataset) == fieldName)
+    field <- aggregate(dataset[, index], by = list(dataset$EVTYPE), FUN = "sum")
+    names(field) <- c("EVTYPE", fieldName)
+    field <- arrange(field, field[, 2], decreasing = T)
+    field <- head(field, n = top)
+    field <- within(field, EVTYPE <- factor(x = EVTYPE, levels = field$EVTYPE))
+    return(field)
+}
+
+fatalities <- topEvents("FATALITIES", dataset = stormSubset)
+injuries <- topEvents("INJURIES", dataset = stormSubset)
+```
+
+#### Impact on economy
+
+We need to convert *property damage* and *crop damage* data into comparable absolut numeric values, convert to a power of 10. Each of the letters representing: Hundred (H), Thousand (K), Million (M) and Billion (B).
+
+```{r, cache = TRUE}
+convertFieldName <- function(dataset = stormSubset, fieldName, newFieldName) {
+    totalLen <- dim(dataset)[2]
+    index <- which(colnames(dataset) == fieldName)
+    dataset[, index] <- as.character(dataset[, index])
+    logic <- !is.na(toupper(dataset[, index]))
+    dataset[logic & toupper(dataset[, index]) == "B", index] <- "9"
+    dataset[logic & toupper(dataset[, index]) == "M", index] <- "6"
+    dataset[logic & toupper(dataset[, index]) == "K", index] <- "3"
+    dataset[logic & toupper(dataset[, index]) == "H", index] <- "2"
+    dataset[logic & toupper(dataset[, index]) == "", index] <- "0"
+    dataset[, index] <- as.numeric(dataset[, index])
+    dataset[is.na(dataset[, index]), index] <- 0
+    dataset <- cbind(dataset, dataset[, index - 1] * 10^dataset[, index])
+    names(dataset)[totalLen + 1] <- newFieldName
+    return(dataset)
+}
+
+stormSubset <- convertFieldName(stormSubset, "PROPDMGEXP", "propertyDamage")
+stormSubset <- convertFieldName(stormSubset, "CROPDMGEXP", "cropDamage")
+names(stormSubset)
+options(scipen=999)
+property <- topEvents("propertyDamage", dataset = stormSubset)
+crop <- topEvents("cropDamage", dataset = stormSubset)
+```
+
+### Results
+
+#### Public Health
+
+We can now present the results of the analysis, we can now see a sorted list for each event type that caused more *injuries* and *fatalities*.
+
+```{r, cache = TRUE}
+injuries
+fatalities
+```
+
+We can also create a set of plots for those results.
+
+```{r, cache = TRUE}
+injuriesPlot <- ggplot(injuries, aes(EVTYPE, INJURIES))+ geom_bar(stat = "identity", fill = "darkblue") + ggtitle("Injuries by Severe Weather\n Events in the U.S.\n from 1995 to 2011") + theme(axis.text.x = element_text(angle  = 60, hjust = 1)) + ylab("Number of Injuries") + xlab("Event Type")
+fatalitiesPlot <- ggplot(fatalities, aes(EVTYPE, FATALITIES)) + geom_bar(stat = "identity", fill = "darkblue") + ggtitle("Fatalities by Severe Weather\n Events in the U.S.\n from 1995 to 2011") + theme(axis.text.x = element_text(angle  = 60, hjust = 1)) + ylab("Number of Fatalities") + xlab("Event Type")
+grid.arrange(injuriesPlot, fatalitiesPlot, ncol = 2)
+```
+
+Looking at those plots, we can see both more harmful weather events: *Tornado* with 21765 injuries, and *Excessive Heat* with 1903 fatalities.
+
+#### Economy
+
+We can now see the impcat on economy for the analysed data:
+
+```{r, cache = TRUE}
+crop
+property
+```
+
+We can plot those results as well to see more clearly the difference between all the measurements.
+
+```{r, cache = TRUE}
+cropPlot <- ggplot(fatalities, aes(EVTYPE, cropDamage)) + geom_bar(stat = "identity", fill = "darkblue") + ggtitle("Property Damage caused by Severe Weather\n Events in the U.S.\n from 1995 to 2011") + theme(axis.text.x = element_text(angle  = 60, hjust = 1)) + ylab("Damage in U$D") + xlab("Event Type")
+propertyPlot <- ggplot(fatalities, aes(EVTYPE, propertyDamage)) + geom_bar(stat = "identity", fill = "darkblue") + ggtitle("Crop Damage caused by Severe Weather\n Events in the U.S.\n from 1995 to 2011") + theme(axis.text.x = element_text(angle  = 60, hjust = 1)) + ylab("Crop Damage in U$D") + xlab("Event Type")
+grid.arrange(cropPlot, propertyPlot, ncol = 2)
+```
+
+Based in the above plots, we can see that both weather events that are being more harmful for the economy are: *Flood*, causing $144022037057 of property damage and *Drought* causing $13922066000 of crop damage.
 
